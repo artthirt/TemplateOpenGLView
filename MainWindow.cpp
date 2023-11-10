@@ -8,6 +8,8 @@
 #include <QSlider>
 #include <QDoubleSpinBox>
 #include <QLabel>
+#include <QSettings>
+#include <QFileInfo>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -22,10 +24,14 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->vlCntr->addWidget(w);
 
     initDistortions();
+
+    loadSettings();
 }
 
 MainWindow::~MainWindow()
 {
+    writeSettings();
+
     delete ui;
 }
 
@@ -34,7 +40,10 @@ void MainWindow::on_actionOpen_triggered()
     auto str = QFileDialog::getOpenFileName(nullptr, "Open Image...", mDefaultDir,
                                             "Images (*.bmp *.png *.jpg *.jpeg *.tif *.tiff *.pgm *.ppm)");
     if(!str.isEmpty()){
+        mLastFile = str;
+        mDefaultDir = QFileInfo(mLastFile).absolutePath();
         mView.setImg(str);
+        writeSettings();
     }
 }
 
@@ -152,5 +161,25 @@ void MainWindow::initDistortions()
         auto hb = createControl(fundist, n, 0, idx++, -1, 1, 0.0001, 5);
         ui->vlDist->addLayout(hb.hb);
     }
+}
+
+void MainWindow::loadSettings()
+{
+    QSettings st("settings.ini", QSettings::IniFormat);
+
+    mDefaultDir = st.value("default_dir", mDefaultDir).toString();
+    mLastFile = st.value("last_file", mLastFile).toString();
+
+    if(!mLastFile.isEmpty()){
+        mView.setImg(mLastFile);
+    }
+}
+
+void MainWindow::writeSettings()
+{
+    QSettings st("settings.ini", QSettings::IniFormat);
+
+    st.setValue("default_dir", mDefaultDir);
+    st.setValue("last_file", mLastFile);
 }
 

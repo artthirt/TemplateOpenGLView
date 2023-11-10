@@ -22,10 +22,14 @@ private slots:
 private:
     Ui::MainWindow *ui;
     QString mDefaultDir;
+    QString mLastFile;
 
     ViewOpenGL mView;
 
     void initDistortions();
+
+    void loadSettings();
+    void writeSettings();
 };
 
 #endif // MAINWINDOW_H

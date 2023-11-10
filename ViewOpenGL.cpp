@@ -25,7 +25,7 @@ out vec4 FragColor;
 void main()
 {
     vec4 rgb = texture2D(uTex, vTex);
-    FragColor = rgb;
+    FragColor = rgb.bgra;
 }
 )";
 
@@ -69,12 +69,19 @@ ViewOpenGL::ViewOpenGL()
     : QOpenGLWindow()
     , OpenGLFunctions()
 {
-    connect(&mTimer, SIGNAL(timeout()), this, SLOT(onTimeout()));
-    mTimer.start(2);
-
     mDistortions.resize(14, 0);
 
+    cv::Mat test = cv::Mat::zeros(480, 640, CV_8UC3);
+    cv::rectangle(test, {0, 0, 160, 480}, {255, 0, 0}, -1);
+    cv::rectangle(test, {160, 0, 160, 480}, {0, 255, 0}, -1);
+    cv::rectangle(test, {320, 0, 160, 480}, {0, 0, 255}, -1);
+    cv::rectangle(test, {480, 0, 160, 480}, {255, 255, 255}, -1);
+    setImg(test);
+
     mIThr.reset(new InternalThread(this));
+
+    connect(&mTimer, SIGNAL(timeout()), this, SLOT(onTimeout()));
+    mTimer.start(2);
 }
 
 ViewOpenGL::~ViewOpenGL()
@@ -188,10 +195,10 @@ void ViewOpenGL::initializeGL()
          1,  1, 0,
     };
     mTexRect = {
-        0, 0,
         0, 1,
-        1, 0,
+        0, 0,
         1, 1,
+        1, 0,
     };
 
     mProg.addShaderFromSourceCode(QOpenGLShader::Vertex, c_Vertex);
@@ -206,13 +213,6 @@ void ViewOpenGL::initializeGL()
     mAVec = mProg.attributeLocation("aPos");
     mATex = mProg.attributeLocation("aTex");
     mUTex = mProg.uniformLocation("uTex");
-
-    cv::Mat test = cv::Mat::zeros(480, 640, CV_8UC3);
-    cv::rectangle(test, {0, 0, 160, 480}, {255, 0, 0}, -1);
-    cv::rectangle(test, {160, 0, 160, 480}, {0, 255, 0}, -1);
-    cv::rectangle(test, {320, 0, 160, 480}, {0, 0, 255}, -1);
-    cv::rectangle(test, {480, 0, 160, 480}, {255, 255, 255}, -1);
-    setImg(test);
 
     //cv::imwrite("test.png", test);
 
