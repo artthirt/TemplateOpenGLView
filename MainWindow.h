@@ -24,6 +24,8 @@ private:
     QString mDefaultDir;
 
     ViewOpenGL mView;
+
+    void initDistortions();
 };
 
 #endif // MAINWINDOW_H

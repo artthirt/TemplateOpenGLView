@@ -1,5 +1,7 @@
 #include "ViewOpenGL.h"
 
+#include <QtConcurrent/QtConcurrent>>
+
 QString c_Vertex =
     R"(
 #version 330
@@ -29,23 +31,77 @@ void main()
 
 ///////////////////////
 
+class InternalThread: public QThread{
+public:
+    InternalThread(ViewOpenGL* that){
+        mOwner = that;
+        moveToThread(this);
+        start();
+    }
+    ~InternalThread(){
+        mDone = true;
+        quit();
+        wait();
+    }
+    void needCompute(){
+        mCompute = true;
+    }
+protected:
+    virtual void run(){
+        while(!mDone){
+            if(mCompute && mOwner){
+                mCompute = false;
+                mOwner->undistort();
+            }else{
+                usleep(2);
+            }
+        }
+    }
+private:
+    bool mCompute = false;
+    bool mDone = false;
+    ViewOpenGL *mOwner = nullptr;
+};
+
+///////////////////////
+
 ViewOpenGL::ViewOpenGL()
     : QOpenGLWindow()
     , OpenGLFunctions()
 {
     connect(&mTimer, SIGNAL(timeout()), this, SLOT(onTimeout()));
     mTimer.start(2);
+
+    mDistortions.resize(14, 0);
+
+    mIThr.reset(new InternalThread(this));
 }
 
 ViewOpenGL::~ViewOpenGL()
 {
-
+    if(mIThr){
+        mIThr.reset();
+    }
 }
 
 void ViewOpenGL::setImg(const cv::Mat &mat)
 {
     QMutexLocker _(&mMut);
+
+    cv::Size sz = mImg.size();
+
     mImg = mat;
+    mOrg = mat.clone();
+
+    if(mImg.size() != sz){
+        mFx = mImg.cols/2;
+        mFy = mImg.rows/2;
+        mCx = mFx;
+        mCy = mFy;
+    }
+
+    emit updateImage();
+
     mTexUpdate = true;
 }
 
@@ -56,6 +112,68 @@ void ViewOpenGL::setImg(const QString &file)
         return;
     }
     setImg(tmp);
+}
+
+void ViewOpenGL::setDistortions(const std::vector<float> &d)
+{
+    mDistortions = d;
+    mIThr->needCompute();
+}
+
+std::vector<float> ViewOpenGL::distortions() const
+{
+    return mDistortions;
+}
+
+void ViewOpenGL::setDistortion(int idx, float val)
+{
+    if(idx >= mDistortions.size()){
+        mDistortions.resize(idx + 1, 0);
+    }
+    mDistortions[idx] = val;
+    setDistortions(mDistortions);
+}
+
+float ViewOpenGL::distortion(int idx) const
+{
+    if(idx < mDistortions.size()){
+        return mDistortions[idx];
+    }
+    return 0;
+}
+
+void ViewOpenGL::setCamParam(int idx, float val)
+{
+    switch (idx) {
+    case 0:
+        mFx = val; break;
+    case 1:
+        mFy = val; break;
+    case 2:
+        mCx = val; break;
+    case 3:
+        mCy = val; break;
+    default:
+        break;
+    }
+    mIThr->needCompute();
+}
+
+float ViewOpenGL::camParam(int idx) const
+{
+    switch (idx) {
+    case 0:
+        return mFx;
+    case 1:
+        return mFy;
+    case 2:
+        return mCx;
+    case 3:
+        return mCy;
+    default:
+        break;
+    }
+    return 0;
 }
 
 void ViewOpenGL::initializeGL()
@@ -148,7 +266,6 @@ void ViewOpenGL::onTimeout()
         return;
     }
     if(mTexUpdate){
-        mTexUpdate = false;
         genTexture();
     }
     if(mUpdate){
@@ -160,11 +277,22 @@ void ViewOpenGL::onTimeout()
 
 void ViewOpenGL::genTexture()
 {
-    if(mImg.empty() || !mInit){
+    if(!mTexUpdate || mImg.empty() || !mInit){
         return;
     }
-    QMutexLocker _(&mMut);
+    if(!mMut.tryLock()){
+        return;
+    }
+    mTexUpdate = false;
 
+    _genTexture();
+
+    mMut.unlock();
+    mUpdate = true;
+}
+
+void ViewOpenGL::_genTexture()
+{
     if(mBTex == 0){
         glGenTextures(1, &mBTex);
     }
@@ -189,9 +317,20 @@ void ViewOpenGL::genTexture()
     //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, fmt, mImg.cols, mImg.rows, 0, fmt, type, mImg.data);
-    qDebug() << glGetError();
-
     doneCurrent();
+}
 
-    mUpdate = true;
+void ViewOpenGL::undistort()
+{
+    QMutexLocker _(&mMut);
+    float camm[] = {
+        mFx, 0, mCx,
+        0, mFy, mCy,
+        0, 0, 1
+    };
+    auto cameraMatrix = cv::Mat(3, 3, CV_32F, camm);
+
+    cv::undistort(mOrg, mImg, cameraMatrix, mDistortions);
+
+    mTexUpdate = true;
 }
