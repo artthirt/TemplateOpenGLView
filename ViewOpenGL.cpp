@@ -1,6 +1,6 @@
 #include "ViewOpenGL.h"
 
-#include <QtConcurrent/QtConcurrent>>
+#include <QtConcurrent/QtConcurrent>
 
 QString c_Vertex =
     R"(
